@@ -230,7 +230,7 @@ function letters(name) {
   let i = 0;
   return String(name).split(' ').map(w => '<span class="w" aria-hidden="true">' + [...w].map(ch => '<span class="ch" style="--i:' + (i++) + '">' + esc(ch) + '</span>').join('') + '</span>').join(' ');
 }
-const revealer = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); revealer.unobserve(e.target); } }), { threshold: .08, rootMargin: '0px 0px -4% 0px' }) : null;
+const revealer = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { const t = e.target; t.classList.add('in'); revealer.unobserve(t); t.addEventListener('transitionend', ev => { if (ev.target === t && ev.propertyName === 'transform') t.classList.remove('sr'); }); } }), { threshold: .08, rootMargin: '0px 0px -4% 0px' }) : null;
 function reveal(root, sel) {
   if (!root) return;
   let d = 0;
@@ -240,12 +240,20 @@ function reveal(root, sel) {
   });
 }
 function countUps(root) {
+  /* telt pas op zodra het blok in beeld is geschoven, en schrijft alleen bij een nieuwe waarde */
   $$('.cu', root).forEach(el => {
-    const to = +el.dataset.to || 0, t0 = performance.now() + 450, ms = 1500;
+    const to = +el.dataset.to || 0, ms = 1500;
+    let t0 = 0, last = -1;
     const tick = now => {
-      const k = clamp((now - t0) / ms, 0, 1), e = 1 - Math.pow(2, -10 * k);
-      el.textContent = Math.round(to * (k >= 1 ? 1 : e));
-      if (k < 1 && el.isConnected) requestAnimationFrame(tick);
+      if (!el.isConnected) return;
+      const host = el.closest('.sr, .in');
+      if (!t0) {
+        if (host && !host.classList.contains('in')) return void setTimeout(() => requestAnimationFrame(tick), 250);
+        t0 = now + 450;
+      }
+      const k = clamp((now - t0) / ms, 0, 1), v = Math.round(to * (k >= 1 ? 1 : 1 - Math.pow(2, -10 * k)));
+      if (v !== last) { last = v; el.textContent = v; }
+      if (k < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
@@ -269,6 +277,13 @@ function scrollToY(y, ms = 900) {
 
 /* Het verhaal schuift als een vel over het landschap: het landschap krimpt en dimt mee.
    Alleen transform en opacity, rechtstreeks op de elementen: dat blijft soepel op een iPhone. */
+let moveTimer = 0;
+function holdScene(shell) {
+  if (!shell) return;
+  shell.classList.add('moving');
+  clearTimeout(moveTimer);
+  moveTimer = setTimeout(() => shell.classList.remove('moving'), 180);
+}
 let scrollTick = false;
 function onScroll() {
   scrollTick = false;
@@ -278,6 +293,7 @@ function onScroll() {
   const h = shell.offsetHeight || 1, k = clamp(window.scrollY / (h * .85), 0, 1);
   if (shell._k === k) return;
   shell._k = k;
+  holdScene(shell);
   $('.scene-deck', shell).style.transform = 'scale(' + (1 - .08 * k).toFixed(4) + ') translate3d(0,' + (-2.5 * k).toFixed(2) + '%,0)';
   $('.scene-dim', shell).style.opacity = (.6 * k).toFixed(3);
   const ui = clamp(1 - k * 2.4, 0, 1), nav = $('.scene-navigation', shell);
@@ -292,16 +308,17 @@ addEventListener('scroll', () => { if (!scrollTick) { scrollTick = true; request
 function toggleDetails(d) {
   const fold = $(':scope > .fold', d);
   if (!fold || !fold.animate) { d.open = !d.open; d.classList.toggle('is-open', d.open); return; }
+  const h0 = d._anim ? fold.getBoundingClientRect().height : null;
   if (d._anim) d._anim.cancel();
   const opening = !d.open || d.classList.contains('closing');
   const easing = 'cubic-bezier(.2,.8,.2,1)';
   if (opening) {
     d.open = true; d.classList.remove('closing'); d.classList.add('is-open');
-    d._anim = fold.animate([{ height: '0px', opacity: 0 }, { height: fold.scrollHeight + 'px', opacity: 1 }], { duration: 520, easing });
+    d._anim = fold.animate([{ height: (h0 || 0) + 'px', opacity: h0 ? .6 : 0 }, { height: fold.scrollHeight + 'px', opacity: 1 }], { duration: 520, easing });
     d._anim.onfinish = () => { d._anim = null; };
   } else {
     d.classList.add('closing'); d.classList.remove('is-open');
-    d._anim = fold.animate([{ height: fold.offsetHeight + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: 380, easing });
+    d._anim = fold.animate([{ height: (h0 != null ? h0 : fold.offsetHeight) + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: 380, easing });
     d._anim.onfinish = () => { d.open = false; d.classList.remove('closing'); d._anim = null; };
   }
 }
@@ -357,7 +374,7 @@ function bindDeck() {
   const deck = $('.scene-deck'), controller = new AbortController(), opt = { passive: true, signal: controller.signal };
   const slides = $$('.destination', deck).map(el => ({ head: $('.destination-heading', el), art: $('.scene-art', el), bottom: $('.scene-bottom', el) }));
   let timer = 0, raf = 0, width = deck.clientWidth;
-  D.hold = Date.now() + 700;
+  D.hold = Date.now() + 700; D.goal = null;
   deck.scrollLeft = S.dayIndex * width;
   const parallax = () => {
     raf = 0;
@@ -377,11 +394,14 @@ function bindDeck() {
   const settle = () => {
     const w = deck.clientWidth;
     if (!w) return;
+    /* Een sprong via pijl, stip of "morgen" heeft een doel: hapert de vloeiende scroll (iOS + scroll-snap), dan telt het doel en niet de tussenstand. */
+    if (D.goal != null) { const g = D.goal; D.goal = null; if (Math.abs(deck.scrollLeft - g * w) > 2) deck.scrollTo({ left: g * w, behavior: 'instant' }); return; }
     /* Vlak na laden of draaien houdt de carrousel de gekozen dag vast, wat de layout ook doet. */
     if (Date.now() < D.hold) { if (Math.abs(deck.scrollLeft - S.dayIndex * w) > 2) deck.scrollTo({ left: S.dayIndex * w, behavior: 'instant' }); return; }
     activateDay(Math.round(deck.scrollLeft / w), true);
   };
-  deck.addEventListener('scroll', () => { D.lastScroll = Date.now(); clearTimeout(timer); timer = setTimeout(settle, 90); if (!raf) raf = requestAnimationFrame(parallax); }, opt);
+  deck.addEventListener('touchstart', () => { D.goal = null; }, opt); /* een echte veeg gaat voor op een lopende sprong */
+  deck.addEventListener('scroll', () => { holdScene(deck.parentElement); D.lastScroll = Date.now(); clearTimeout(timer); timer = setTimeout(settle, 90); if (!raf) raf = requestAnimationFrame(parallax); }, opt);
   deck.addEventListener('keydown', e => {
     if (e.target !== deck) return;
     const n = days().length;
@@ -404,12 +424,14 @@ function goDay(index) {
   const n = clamp(index, 0, days().length - 1);
   D.hold = 0;
   activateDay(n, true);
+  D.goal = n;
   deck.scrollTo({ left: n * deck.clientWidth, behavior: 'smooth' });
   /* vangnet: komt de vloeiende scroll niet aan (onderbroken, venster verborgen), zet de carrousel dan alsnog goed */
   clearTimeout(D.fix);
   D.fix = setTimeout(() => {
     const w = deck.clientWidth;
     if (!deck.isConnected || S.dayIndex !== n || Date.now() - (D.lastScroll || 0) < 200) return;
+    D.goal = null;
     if (Math.abs(deck.scrollLeft - n * w) > 2) deck.scrollTo({ left: n * w, behavior: 'instant' });
   }, 1100);
 }
@@ -417,7 +439,13 @@ function activateDay(index, announce) {
   const total = days().length, n = clamp(index, 0, total - 1);
   if (S.storyFor === n) return;
   S.dayIndex = n; S.storyFor = n;
-  $$('.destination').forEach((el, i) => { el.classList.toggle('selected', i === n); el.inert = i !== n; el.setAttribute('aria-hidden', String(i !== n)); });
+  $$('.destination').forEach((el, i) => {
+    el.classList.toggle('selected', i === n);
+    el.classList.toggle('near', Math.abs(i - n) <= 1);
+    el.setAttribute('aria-hidden', String(i !== n));
+    const cue = $('.story-cue', el);
+    if (cue) cue.tabIndex = i === n ? 0 : -1;
+  });
   $$('.scene-dots button').forEach((b, i) => { b.classList.toggle('active', i === n); b.setAttribute('aria-current', String(i === n)); });
   $('.scene-arrow.previous').disabled = n === 0;
   $('.scene-arrow:not(.previous)').disabled = n === total - 1;

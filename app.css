@@ -68,7 +68,7 @@ ul.plain li::marker { color: var(--terra); }
 ul.plain a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
 
 /* ---------- uitklappers (hoogte wordt in app.js geanimeerd, werkt ook op iPhone) ---------- */
-details > summary { list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+details > summary { list-style: none; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 details > summary::-webkit-details-marker { display: none; }
 details > summary .plus { margin-left: auto; position: relative; width: 14px; height: 14px; flex-shrink: 0; transition: transform .5s var(--spring); }
 details > summary .plus:before, details > summary .plus:after { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 1.6px; border-radius: 2px; background: currentColor; transition: transform .5s var(--spring), opacity .3s; }
@@ -81,12 +81,16 @@ details.edit > summary { display: flex; align-items: center; gap: 9px; min-heigh
 details.edit > summary .icon { width: 16px; height: 16px; }
 details.edit .fold-inner { padding: 0 0 12px; }
 
+/* ---------- statusbalk (iPhone, app op het beginscherm): witte klok en batterij leesbaar houden ---------- */
+@media (display-mode: standalone) {
+  body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--safe-t); z-index: 40; pointer-events: none; background: linear-gradient(#0d2a26c7, #0d2a2633); }
+}
+
 /* ---------- navigatie ---------- */
 nav {
   position: fixed; left: 16px; right: 16px; bottom: calc(12px + var(--safe-b)); margin: auto; max-width: 440px; z-index: 30;
   display: grid; grid-template-columns: repeat(4, 1fr); padding: 5px 7px; border-radius: 26px;
-  background: #173f38f2; color: var(--cream); border: 1px solid #ffffff22; box-shadow: 0 12px 38px #12322c45;
-  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  background: #173f38f7; color: var(--cream); border: 1px solid #ffffff22; box-shadow: 0 12px 38px #12322c45;
   animation: nav-in 1s var(--ease) .5s both; view-transition-name: mainnav;
 }
 nav button { position: relative; z-index: 1; height: 54px; min-width: 0; border: 0; border-radius: 20px; background: none; color: #d2dec9; font-size: 9.5px; font-weight: 500; letter-spacing: .2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; transition: color .4s; }
@@ -136,9 +140,11 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 .scene-bottom { position: absolute; left: calc(var(--gutter) + 2px); right: calc(var(--gutter) + 2px); bottom: calc(var(--tab) + 22px + var(--safe-b)); color: #fff9e5; will-change: transform, opacity; }
 .stay-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; font-size: 12px; font-weight: 500; }
 .nights { display: flex; gap: 7px; }
-.nights i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #f4edcf; opacity: .5; }
-.nights i.done { background: #f4edcf; opacity: .35; }
-.nights i.now { background: #f4edcf; opacity: 1; animation: pulse-cream 2.2s ease-out infinite; }
+.nights i { position: relative; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor; opacity: .5; }
+.nights i.done { background: currentColor; opacity: .35; }
+.nights i.now { background: currentColor; opacity: 1; }
+.nights i.now::after { content: ''; position: absolute; inset: -1.5px; border-radius: 50%; background: currentColor; pointer-events: none; animation: pulse-ring 2.2s ease-out infinite; }
+.destination:not(.selected) .nights i.now::after, .scene-shell.covered .nights i.now::after { animation-play-state: paused; }
 .scene-facts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 .scene-facts > div { min-width: 0; border-left: 1px solid #f5e9c63b; padding-left: 12px; }
 .scene-facts > div:first-child { border: 0; padding-left: 0; }
@@ -173,6 +179,8 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 /* beweging in het landschap */
 .destination:not(.selected) * { animation-play-state: paused !important; }
 .scene-shell.covered * { animation-play-state: paused !important; }
+.scene-shell.moving .scene-svg * { animation-play-state: paused !important; }
+.destination:not(.near) .scene-fx > i, .destination:not(.near) .stars { display: none; }
 .destination:not(.selected) .rv, .destination:not(.selected) .ch { opacity: 0; }
 .destination.selected .rv { animation: rise 1.1s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms + 250ms); }
 .destination.selected .ch { animation: letter 1.2s var(--spring) both; animation-delay: calc(var(--i) * 60ms + 200ms); }
@@ -246,7 +254,6 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 .stay-card .nights { margin-top: 18px; }
 .stay-card .nights i { width: 12px; height: 12px; }
 .stay-card.upcoming { background: #e9eee0; color: #2c4a3e; }
-.stay-card.upcoming .nights i { border-color: #2c4a3e; }
 .stay-card.past { background: #ece7dc; color: #5d5a4e; }
 
 .journey-entry + .journey-entry { margin-top: 30px; }
@@ -353,7 +360,7 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 .cards-dots i.on { width: 22px; background: var(--forest); }
 .timeline { position: relative; padding-left: 28px; }
 .timeline:before { content: ''; position: absolute; left: 5px; top: 8px; bottom: 10px; width: 1.5px; background: #cfd3c2; transform: scaleY(0); transform-origin: top; transition: transform 2.2s var(--ease); }
-.timeline.in:before { transform: none; }
+.block.in .timeline:before { transform: none; }
 .moment { position: relative; padding-bottom: 24px; }
 .moment:last-child { padding-bottom: 0; }
 .moment:before { content: ''; position: absolute; left: -28px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--sand); border: 2px solid var(--terra); }
@@ -428,7 +435,8 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 .agenda-copy > strong { font-weight: 600; font-size: 12.5px; display: block; }
 .agenda-copy > small { font-size: 11px; color: var(--muted); }
 .day-row.today .agenda-number { color: var(--terra); }
-.day-row.today .agenda-number:after { content: ''; position: absolute; left: -13px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--terra); animation: pulse 1.8s ease-out infinite; }
+.day-row.today .agenda-number:before, .day-row.today .agenda-number:after { content: ''; position: absolute; left: -13px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--terra); }
+.day-row.today .agenda-number:before { animation: pulse-ring-wide 1.8s ease-out infinite; }
 
 /* ---------- eerste beeld tijdens het laden ---------- */
 #splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--sand); }
@@ -487,8 +495,8 @@ nav button.on svg { animation: icon-pop .7s var(--spring); }
 @keyframes drive { 0% { offset-distance: 0%; opacity: 0; } 8% { opacity: 1; } 88% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
 @keyframes nudge { 50% { transform: translateX(5px); } }
 @keyframes tile-pan { from { transform: translateY(var(--ty)) scale(1); } to { transform: translateY(calc(var(--ty) + 5%)) scale(1.09); } }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 #b64e3770; } 100% { box-shadow: 0 0 0 12px #b64e3700; } }
-@keyframes pulse-cream { 0% { box-shadow: 0 0 0 0 #f4edcf80; } 100% { box-shadow: 0 0 0 10px #f4edcf00; } }
+@keyframes pulse-ring { from { transform: scale(1); opacity: .5; } to { transform: scale(3); opacity: 0; } }
+@keyframes pulse-ring-wide { from { transform: scale(1); opacity: .45; } to { transform: scale(5); opacity: 0; } }
 @keyframes fall { to { transform: translate3d(-22vh, 125vh, 0) rotate(10deg); } }
 @keyframes snow { to { transform: translate3d(var(--dx, 30px), 112vh, 0); } }
 @keyframes fog { to { transform: translateX(18%); } }

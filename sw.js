@@ -1,5 +1,5 @@
 /* Offline-schil. Verhoog SHELL bij elke wijziging aan de app; lettertypen staan apart zodat een update ze niet wist. */
-const SHELL = 'shell-v9', FONTS = 'fonts-v1';
+const SHELL = 'shell-v10', FONTS = 'fonts-v1';
 const CORE = ['./', 'index.html', 'app.css', 'app.js', 'scenes.js', 'data/trip.enc', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-512.png'];
 
 /* Alles of niets: ontbreekt er een kernbestand (kapotte deploy), dan mislukt de installatie en blijft de vorige versie werken.
@@ -13,19 +13,22 @@ self.addEventListener('activate', e => {
 
 /* App en reisgegevens: eerst het netwerk, zodat een nieuwe planning meteen binnenkomt; na 3 s (headers én inhoud)
    of bij een foutrespons de laatst bewaarde versie. De querystring telt niet mee in de sleutel. */
+let slowUntil = 0; /* was het netwerk net traag (zwak bereik), wacht dan een minuut lang nog maar kort */
 async function networkFirst(req) {
   const cache = await caches.open(SHELL);
   const key = req.url.split('?')[0];
-  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 3000);
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), Date.now() < slowUntil ? 700 : 3000);
   try {
     const res = await fetch(req.url, { signal: ctl.signal, cache: 'no-cache' });
     const body = await res.blob();
     clearTimeout(timer);
+    slowUntil = 0;
     const out = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
     if (res.ok) { cache.put(key, out.clone()); return out; }
     return (await cache.match(key)) || out;
   } catch (e) {
     clearTimeout(timer);
+    slowUntil = Date.now() + 60000;
     return (await cache.match(key)) || (await cache.match(key + 'index.html')) || Response.error();
   }
 }
