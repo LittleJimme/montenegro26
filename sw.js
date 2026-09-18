@@ -1,4 +1,4 @@
-const SHELL = 'shell-v6';
+const SHELL = 'shell-v7';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
