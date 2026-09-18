@@ -1,0 +1,4 @@
+# Onversleutelde reisgegevens komen nooit in de repo
+data/trip.json
+tools/plan.json
+__pycache__/
